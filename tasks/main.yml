@@ -1,79 +1,94 @@
 ---
 
-- name: Ensure SSH home dir exists
-  file:
-    path: '{{ ssh_home }}'
-    owner: '{{ owner }}'
-    mode: 0700
+- name: Ensure lxd is started
+  service:
+    name: lxd
+    state: started
 
-- name: Ensure SSH config exists
-  file:
-    path: '{{ ssh_home }}/config'
-    state: touch
-    owner: '{{ owner }}'
-    mode: 0700
-  changed_when: false
-
-- name: Ensure there is a public key
-  shell: ssh-keygen -f {{ ssh_private_key }} -N ''
-  args:
-    creates: '{{ ssh_private_key }}'
-
-- name: Ensure the keys have restricted permissions
-  file:
-    path: '{{ item }}'
-    owner: '{{ owner }}'
-    mode: 0600
-  with_items:
-  - '{{ ssh_private_key }}'
-  - '{{ ssh_public_key }}'
-
-# Just for debugging.
-- name: enable ssh-agent
-  shell: echo "ssh-agent = $(ssh-agent)"
-  when: '"SSH_AUTH_SOCK" in ansible_env'
-
-- name: enable ssh-agent
-  shell: eval $(ssh-agent)
-  when: '"SSH_AUTH_SOCK" in ansible_env'
-
-- name: Ensure SSH to containers is permissive
-  blockinfile:
-    dest: '{{ ssh_home }}/config'
-    block: |
-      Host *.lxc
-          # No need for security for disposable test containers
-          UserKnownHostsFile /dev/null
-          StrictHostKeyChecking no
-          User root
-      Host *.lxd
-          # No need for security for disposable test containers
-          UserKnownHostsFile /dev/null
-          StrictHostKeyChecking no
-          User root
-
-- name: Drop containers
-  lxc_container:
+- name: Start lxd container
+  lxd_container:
     name: '{{ item.split(".")[0] }}'
-    state: absent
-    lxc_path: '{{ hostvars[item].get("lxc_path", lxc_path) }}'
-  when: lxc_drop_containers and item.split('.')[-1] in ('lxc', 'lxd')
+    state: started
+    source:
+      type: image
+      mode: pull
+      server: https://images.linuxcontainers.org
+      protocol: lxd
+      alias: '{{ hostvars[item].get("lxd_alias", "ubuntu/xenial/amd64") }}'
+    profiles: ['default']
+    wait_for_ipv4_addresses: true
+  when: item.split('.')[-1] == 'lxd'
   with_items: '{{ groups["all"] }}'
 
-- name: Checking if lxc is installed
-  shell: hash lxc-create
-  register: lxc_installed
-  ignore_errors: yes
+- name: Add lxd host with lxd connection to setup python & ssh
+  add_host:
+    name: 'novafloss.boot-lxd-{{ item.split(".")[0] }}'
+    ansible_ssh_host: '{{ item.split(".")[0] }}'
+    ansible_connection: lxd
+    group: 'novafloss.boot-lxd'
+  when: item.endswith('.lxd')
+  with_items: '{{ groups["all"] }}'
 
-- name: Checking if lxd is installed
-  shell: hash lxd
-  register: lxd_installed
-  ignore_errors: yes
+- name: Wait for containers to be connected
+  shell: lxc exec {{ item.replace('.lxd', '') }} -- getent hosts google.com
+  when: item.endswith('lxd')
+  with_items: '{{ groups["all"] }}'
+  retries: 30
+  delay: 1
 
-- include: lxc.yml
-  tags: lxc
-  when: lxc_installed|success
+- name: Refresh packages
+  raw: if hash apt-get; then apt-get update; elif hash apk; then apk update; fi
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
 
-- include: lxd.yml
-  tags: lxd
-  when: lxd_installed|success
+- name: Install sshd
+  raw: if ! hash sshd; then if hash apt-get; then apt-get install -y openssh-server; elif hash apk; then apk add openssh; fi; fi
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+
+- name: Install python in container
+  raw: if ! hash python2; then if hash apt-get; then apt-get install -y python; elif hash apk; then apk add python; fi; fi
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+
+- name: Gather facts
+  setup:
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+  register: setup
+
+- name: Start and enable sshd
+  service:
+    name: sshd
+    state: started
+    enabled: yes
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+
+- name: Add your ssh key to the container
+  authorized_key:
+    key: '{{ lookup("file", ssh_public_key ) }}'
+    path: /root/.ssh/authorized_keys
+    user: root
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+
+- name: Install sudo in container
+  raw: if hash apt-get; then apt-get install -y sudo; elif hash apk; then apk add sudo; fi
+  become: no
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+
+- name: Wait for containers to start sshd
+  wait_for:
+    host: '{{ item }}'
+    port: 22
+    search_regex: OpenSSH
+  when: item.endswith('lxd')
+  with_items: '{{ groups["all"] }}'

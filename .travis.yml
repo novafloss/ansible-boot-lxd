@@ -3,12 +3,22 @@ dist: trusty
 
 language: python
 python:
-- '3.5'
+- '2.7'
+
+env:
+  global:
+  - ANSIBLE_STDOUT_CALLBACK=debug
+  matrix:
+  - ANSIBLE_REF=devel
 
 install:
-- travis_retry wget https://github.com/novafloss/ansible-setup/archive/master.tar.gz
-- tar xfvz master.tar.gz
-- pushd ansible-setup-master && SETUP_LXD=1 DEBUG=1 ./setup.sh && popd
+- travis_retry wget https://raw.githubusercontent.com/novafloss/ansible-setup/master/ansible-setup
+- bash ansible-setup ansible_ref_require $ANSIBLE_REF /usr/bin
+- bash -ex ansible-setup lxd_require
+- sudo sysctl net.ipv4.ip_forward
+- sudo iptables-save
+- sudo ps aux | grep dnsmasq
+- ansible-galaxy install -p . -r test-requirements.yml
 
 script:
-- sg lxd '~/.ansible-env/bin/ansible-playbook -v test.yml -e test_lxc=0'
+- sg lxd 'ansible-playbook -v test.yml --sudo'
