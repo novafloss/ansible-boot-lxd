@@ -83,6 +83,24 @@
   become: no
   delegate_to: '{{ item }}'
   with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
+  register: sshd
+  ignore_errors: yes
+
+- debug: var=item
+  with_items: '{{ sshd.results }}'
+
+- name: Start and enable OpenSSH (for when the above failed)
+  service:
+    name: ssh
+    state: started
+    enabled: yes
+  become: no
+  delegate_to: '{{ item["item"] }}'
+  with_items: '{{ sshd.results }}'
+  register: openssh
+  when: "{{ item|failed }}"
+  ignore_errors: yes
+  failed_when: "item|failed and openssh|failed"
 
 - name: Add your ssh key to the container
   authorized_key:
