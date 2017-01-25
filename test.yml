@@ -5,7 +5,7 @@
   become_user: root
   become_method: sudo
   pre_tasks:
-  - add_host: name=testboot.lxd lxd_alias={{ lookup('env', 'LXD_ALIAS', 'alpine/3.4/amd64' ) }}
+  - add_host: name=testboot.lxd lxd_alias={{ lookup('env', 'LXD_ALIAS', 'alpine/3.4/amd64' ).strip(',') }}
   roles:
   - .
 
