@@ -24,9 +24,6 @@ install:
 - travis_retry wget https://raw.githubusercontent.com/novafloss/ansible-setup/master/ansible-setup
 - bash ansible-setup ansible_ref_require $ANSIBLE_REF /usr/bin
 - bash -ex ansible-setup lxd_require
-- sudo sysctl net.ipv4.ip_forward
-- sudo iptables-save
-- sudo ps aux | grep dnsmasq
 - ansible-galaxy install -p . -r test-requirements.yml
 - ssh-keygen -f /home/travis/.ssh/id_rsa -N ''
 
