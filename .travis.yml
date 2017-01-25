@@ -29,3 +29,7 @@ install:
 
 script:
 - sg lxd 'ansible-playbook -v test.yml --sudo'
+
+cache:
+  directories:
+  - /var/lib/lxd/images/
