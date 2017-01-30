@@ -52,21 +52,21 @@
   become: no
   delegate_to: '{{ item }}'
   with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
-  retries: 30
+  retries: 70
 
 - name: Install sshd
   raw: if ! hash sshd; then if hash apt-get; then apt-get install -y openssh-server; elif hash apk; then apk add openssh; fi; fi
   become: no
   delegate_to: '{{ item }}'
   with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
-  retries: 30
+  retries: 70
 
 - name: Install python in container
   raw: if ! hash python2; then if hash apt-get; then apt-get install -y python; elif hash apk; then apk add python; fi; fi
   become: no
   delegate_to: '{{ item }}'
   with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
-  retries: 30
+  retries: 70
 
 - name: Gather facts
   setup:
@@ -116,7 +116,7 @@
   become: no
   delegate_to: '{{ item }}'
   with_items: '{{ groups.get("novafloss.boot-lxd", []) }}'
-  retries: 30
+  retries: 70
 
 - name: Wait for containers to start sshd
   wait_for:
